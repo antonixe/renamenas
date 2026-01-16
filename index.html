@@ -569,11 +569,12 @@
                 <table class="files-table">
                     <thead>
                         <tr>
+                            <th style="width: 5%;">No.</th>
                             <th style="width: 18%;">Original</th>
                             <th style="width: 38%;">New Name</th>
                             <th style="width: 12%;">Size</th>
                             <th style="width: 14%;">Status</th>
-                            <th style="width: 18%;">Actions</th>
+                            <th style="width: 13%;">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="filesBody">
@@ -644,12 +645,25 @@
         async function handleFiles(files) {
             const pdfFiles = Array.from(files).filter(file => file.type === 'application/pdf');
             
+            if (files.length > 0 && pdfFiles.length === 0) {
+                showNotification('⚠️ Only PDF files are supported', 'error');
+                return;
+            }
+
             if (pdfFiles.length === 0) {
-                showNotification('❌ No PDF files selected', 'error');
+                showNotification('⚠️ No files selected', 'error');
                 return;
             }
 
             for (const file of pdfFiles) {
+                if (file.size === 0) {
+                    showNotification(`⚠️ Skipped empty file: ${file.name}`, 'warning');
+                    continue;
+                }
+                if (file.size > 50 * 1024 * 1024) {
+                    showNotification(`⚠️ File too large (${(file.size / 1024 / 1024).toFixed(1)}MB): ${file.name}`, 'warning');
+                    continue;
+                }
                 const fileId = generateId();
                 fileDatabase.set(fileId, {
                     id: fileId,
@@ -657,7 +671,8 @@
                     originalName: file.name,
                     suggestedName: '',
                     status: 'pending',
-                    fileSize: (file.size / 1024).toFixed(2)
+                    fileSize: (file.size / 1024).toFixed(2),
+                    number: fileDatabase.size + 1
                 });
                 addFileToTable(fileId);
             }
@@ -692,27 +707,33 @@
 
         async function processFile(fileId, index, total) {
             const fileData = fileDatabase.get(fileId);
+            if (!fileData) return;
+            
             updateFileStatus(fileId, 'processing');
 
             try {
                 console.log(`[${index}/${total}] Extracting text from: ${fileData.originalName}`);
                 const text = await extractPdfText(fileData.file);
                 
-                if (!text.trim()) {
-                    throw new Error('No text found in PDF');
+                if (!text || !text.trim()) {
+                    throw new Error('No readable content found in PDF');
                 }
 
                 console.log(`[${index}/${total}] Generating filename with Mistral...`);
                 const name = await generateFilename(text, fileData.originalName);
+                if (!name || name.length < 3) {
+                    throw new Error('Generated filename is invalid');
+                }
                 fileData.suggestedName = name;
                 updateFileStatus(fileId, 'success');
                 updateFileInTable(fileId);
                 showNotification(`✅ ${index}/${total}: ${name}`, 'success');
             } catch (error) {
                 console.error(`[${index}/${total}] Error:`, error);
-                fileData.suggestedName = fileData.originalName.replace(/\.pdf$/i, '').substring(0, 40);
+                const fallbackName = fileData.originalName.replace(/\.pdf$/i, '').substring(0, 40);
+                fileData.suggestedName = fallbackName;
                 updateFileStatus(fileId, 'error');
-                showNotification(`❌ Error: ${error.message}`, 'error');
+                showNotification(`⚠️ ${index}/${total}: ${error.message || 'Failed to generate name'}. Using original: ${fallbackName}`, 'warning');
             }
         }
 
@@ -727,9 +748,14 @@
                         const maxPages = Math.min(2, pdf.numPages);
 
                         for (let i = 1; i <= maxPages; i++) {
-                            const page = await pdf.getPage(i);
-                            const content = await page.getTextContent();
-                            text += content.items.map(item => item.str).join(' ') + ' ';
+                            try {
+                                const page = await pdf.getPage(i);
+                                const content = await page.getTextContent();
+                                text += content.items.map(item => item.str).join(' ') + ' ';
+                            } catch (pageError) {
+                                console.warn(`Could not extract page ${i}:`, pageError);
+                                continue;
+                            }
                         }
 
                         // If extraction successful, use it
@@ -739,14 +765,25 @@
                         }
 
                         // If PDF is scanned/image-based, try Mistral OCR
-                        console.log('Trying Mistral OCR for scanned PDF...');
-                        const ocrText = await extractWithMistralOCR(file);
-                        resolve(ocrText.substring(0, 1000));
+                        console.log('Text extraction minimal - trying Mistral OCR for scanned PDF...');
+                        try {
+                            const ocrText = await extractWithMistralOCR(file);
+                            resolve(ocrText.substring(0, 1000));
+                        } catch (ocrError) {
+                            reject(new Error('Could not extract text. PDF may be corrupted, encrypted, or scanned without readable content.'));
+                        }
                     } catch (error) {
-                        reject(new Error('PDF extraction failed'));
+                        if (error.message.includes('Corrupted')) {
+                            reject(new Error('PDF file is corrupted and cannot be read'));
+                        } else if (error.message.includes('encrypted')) {
+                            reject(new Error('PDF is password-protected. Please remove protection first.'));
+                        } else {
+                            reject(new Error('Failed to read PDF: ' + error.message));
+                        }
                     }
                 };
-                reader.onerror = () => reject(new Error('File read failed'));
+                reader.onerror = () => reject(new Error('Failed to read file from disk. Please try again.'));
+                reader.onabort = () => reject(new Error('File reading was cancelled'));
                 reader.readAsArrayBuffer(file);
             });
         }
@@ -784,8 +821,15 @@
                 });
 
                 if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.message || 'OCR failed');
+                    if (response.status === 401) {
+                        throw new Error('API key is invalid or expired');
+                    } else if (response.status === 429) {
+                        throw new Error('API rate limit exceeded. Please wait before trying again.');
+                    } else if (response.status === 500) {
+                        throw new Error('Mistral service is temporarily unavailable');
+                    }
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.message || `API error: ${response.status}`);
                 }
 
                 const data = await response.json();
@@ -799,7 +843,7 @@
                 }
 
                 if (!extractedText.trim()) {
-                    throw new Error('No text extracted by OCR');
+                    throw new Error('OCR found no readable text in this PDF');
                 }
 
                 console.log('OCR extraction successful:', extractedText.length, 'chars');
@@ -811,8 +855,8 @@
         }
 
         async function generateFilename(content, originalName) {
-            if (!MISTRAL_API_KEY) {
-                showNotification('❌ Mistral API key not configured', 'error');
+            if (!MISTRAL_API_KEY || MISTRAL_API_KEY === 'your-api-key-here') {
+                showNotification('⚠️ API key not configured. Using fallback naming.', 'warning');
                 return generateFallbackName(content, originalName);
             }
 
@@ -934,6 +978,7 @@ Return ONLY the filename. Make it as informative as possible.`;
             const originalName = fileData.originalName.replace(/\.pdf$/i, '').substring(0, 25);
             
             row.innerHTML = `
+                <td style="text-align: center; font-weight: 600; color: var(--primary);">${fileData.number}</td>
                 <td>
                     <div class="file-item">
                         <span class="file-icon">📄</span>
@@ -956,7 +1001,7 @@ Return ONLY the filename. Make it as informative as possible.`;
                 <td>
                     <div class="actions">
                         <button class="btn btn-secondary btn-small" onclick="previewFile('${fileId}')" title="Preview">Preview</button>
-                        <button class="btn btn-secondary btn-small" onclick="downloadFile('${fileId}')" title="Download">Download</button>
+                        <button class="btn btn-secondary btn-small" id="download-btn-${fileId}" onclick="downloadFile('${fileId}')" title="Download">Download</button>
                         <button class="btn btn-danger btn-small" onclick="removeFile('${fileId}')" title="Remove">Remove</button>
                     </div>
                 </td>
@@ -1027,6 +1072,18 @@ Return ONLY the filename. Make it as informative as possible.`;
             a.download = name;
             a.click();
             URL.revokeObjectURL(url);
+            
+            // Change button text to Downloaded
+            const downloadBtn = document.getElementById(`download-btn-${fileId}`);
+            if (downloadBtn) {
+                const originalText = downloadBtn.textContent;
+                downloadBtn.textContent = 'Downloaded';
+                downloadBtn.disabled = true;
+                setTimeout(() => {
+                    downloadBtn.textContent = originalText;
+                    downloadBtn.disabled = false;
+                }, 2000);
+            }
             
             showNotification(`📥 Downloaded: ${name}`, 'success');
         }
