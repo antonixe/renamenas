@@ -702,7 +702,7 @@ ANALYSIS - Answer these:
 5. Critical Details: Amounts, reference numbers, or key info?
 
 FILENAME RULES:
-- MAXIMUM 60 characters
+- MAXIMUM 100 characters
 - Use ONLY: lowercase (a-z), numbers (0-9), hyphens (-), underscores (_)
 - NO spaces, periods, special characters
 - NO file extension (.pdf not needed)
@@ -767,7 +767,7 @@ Return ONLY the filename. Make it as informative as possible.`;
                     .replace(/[`"'*]/g, '')
                     .replace(/[^a-z0-9_-]/gi, '')
                     .toLowerCase()
-                    .substring(0, 60)
+                    .substring(0, 100)
                     .replace(/-+/g, '-')
                     .replace(/_+/g, '_')
                     .replace(/^[-_]+|[-_]+$/g, '');
@@ -820,8 +820,8 @@ Return ONLY the filename. Make it as informative as possible.`;
                 </td>
                 <td>
                     <div class="name-wrapper">
-                        <input type="text" class="name-input" id="input-${fileId}" value="" placeholder="Processing..." maxlength="60" />
-                        <div class="char-count"><span id="count-${fileId}">0</span>/60</div>
+                        <input type="text" class="name-input" id="input-${fileId}" value="" placeholder="Processing..." maxlength="100" />
+                        <div class="char-count"><span id="count-${fileId}">0</span>/100</div>
                     </div>
                 </td>
                 <td>${fileData.fileSize} KB</td>
