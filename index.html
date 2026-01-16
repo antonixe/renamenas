@@ -384,6 +384,7 @@
             display: flex;
             gap: 8px;
             flex-wrap: wrap;
+            justify-content: flex-start;
         }
 
         .notification {
@@ -418,6 +419,107 @@
         .notification.warning { border-left-color: var(--warning); }
         .notification.info { border-left-color: var(--primary); }
 
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.75);
+            z-index: 3000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: var(--border-radius);
+            max-width: 90vw;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--gray-200);
+        }
+
+        .modal-title {
+            font-weight: 600;
+            color: var(--gray-900);
+            flex: 1;
+            word-break: break-word;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: var(--gray-500);
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: var(--transition);
+        }
+
+        .modal-close:hover {
+            color: var(--gray-900);
+            background: var(--gray-100);
+            border-radius: 4px;
+        }
+
+        .modal-body {
+            flex: 1;
+            overflow: auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--gray-100);
+            position: relative;
+        }
+
+        .pdf-canvas {
+            max-width: 100%;
+            max-height: 100%;
+            display: block;
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            border-top: 1px solid var(--gray-200);
+            background: var(--gray-50);
+        }
+
+        .page-nav {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .page-info {
+            font-size: 12px;
+            color: var(--gray-600);
+            min-width: 60px;
+            text-align: center;
+        }
+
         @media (max-width: 768px) {
             .header h1 { font-size: 24px; }
             .upload-section { padding: 32px 20px; }
@@ -428,6 +530,7 @@
             .actions .btn { width: 100%; justify-content: center; }
             .files-table th, .files-table td { padding: 10px 12px; }
             .file-info { gap: 1px; }
+            .modal-content { max-width: 95vw; max-height: 95vh; }
         }
     </style>
 </head>
@@ -479,6 +582,26 @@
     </div>
 
     <div id="notificationContainer"></div>
+
+    <!-- PDF Preview Modal -->
+    <div id="previewModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title" id="modalTitle">PDF Preview</div>
+                <button class="modal-close" onclick="closePreview()">×</button>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <canvas id="pdfCanvas" class="pdf-canvas"></canvas>
+            </div>
+            <div class="modal-footer">
+                <div class="page-nav">
+                    <button class="btn btn-secondary btn-small" onclick="previousPage()" id="prevBtn">← Prev</button>
+                    <div class="page-info"><span id="currentPage">1</span> / <span id="totalPages">1</span></div>
+                    <button class="btn btn-secondary btn-small" onclick="nextPage()" id="nextBtn">Next →</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -830,6 +953,7 @@ Return ONLY the filename. Make it as informative as possible.`;
                 </td>
                 <td>
                     <div class="actions">
+                        <button class="btn btn-secondary btn-small" onclick="previewFile('${fileId}')" title="Preview">Preview</button>
                         <button class="btn btn-secondary btn-small" onclick="downloadFile('${fileId}')" title="Download">Download</button>
                         <button class="btn btn-danger btn-small" onclick="removeFile('${fileId}')" title="Remove">Remove</button>
                     </div>
@@ -952,6 +1076,89 @@ Return ONLY the filename. Make it as informative as possible.`;
         function generateId() {
             return `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         }
+
+        // PDF Preview Functions
+        let currentPreviewFile = null;
+        let currentPdfDoc = null;
+        let currentPageNum = 1;
+
+        async function previewFile(fileId) {
+            const fileData = fileDatabase.get(fileId);
+            if (!fileData) return;
+
+            currentPreviewFile = fileId;
+            document.getElementById('modalTitle').textContent = fileData.originalName;
+            
+            try {
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    try {
+                        currentPdfDoc = await pdfjsLib.getDocument({ data: e.target.result }).promise;
+                        currentPageNum = 1;
+                        renderPage(1);
+                        document.getElementById('previewModal').classList.add('active');
+                    } catch (error) {
+                        showNotification('❌ Failed to load PDF', 'error');
+                    }
+                };
+                reader.readAsArrayBuffer(fileData.file);
+            } catch (error) {
+                showNotification('❌ Error opening PDF', 'error');
+            }
+        }
+
+        async function renderPage(pageNum) {
+            if (!currentPdfDoc || pageNum < 1 || pageNum > currentPdfDoc.numPages) return;
+
+            try {
+                const page = await currentPdfDoc.getPage(pageNum);
+                const scale = 1.5;
+                const viewport = page.getViewport({ scale });
+                const canvas = document.getElementById('pdfCanvas');
+                const context = canvas.getContext('2d');
+
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+
+                await page.render({
+                    canvasContext: context,
+                    viewport: viewport
+                }).promise;
+
+                currentPageNum = pageNum;
+                document.getElementById('currentPage').textContent = pageNum;
+                document.getElementById('totalPages').textContent = currentPdfDoc.numPages;
+                document.getElementById('prevBtn').disabled = pageNum === 1;
+                document.getElementById('nextBtn').disabled = pageNum === currentPdfDoc.numPages;
+            } catch (error) {
+                showNotification('❌ Error rendering page', 'error');
+            }
+        }
+
+        function nextPage() {
+            if (currentPdfDoc && currentPageNum < currentPdfDoc.numPages) {
+                renderPage(currentPageNum + 1);
+            }
+        }
+
+        function previousPage() {
+            if (currentPageNum > 1) {
+                renderPage(currentPageNum - 1);
+            }
+        }
+
+        function closePreview() {
+            document.getElementById('previewModal').classList.remove('active');
+            currentPdfDoc = null;
+            currentPreviewFile = null;
+        }
+
+        // Close modal on background click
+        document.getElementById('previewModal')?.addEventListener('click', (e) => {
+            if (e.target.id === 'previewModal') {
+                closePreview();
+            }
+        });
 
         updateBatchButtons();
     </script>
