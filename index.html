@@ -1041,7 +1041,8 @@ Return ONLY the filename. Make it as informative as possible.`;
                 const zip = new JSZip();
                 for (const [fileId, fileData] of fileDatabase) {
                     const name = (fileData.suggestedName || fileData.originalName.replace(/\.pdf$/i, '')) + '.pdf';
-                    zip.file(name.substring(0, 50), fileData.file);
+                    const arrayBuffer = await fileData.file.arrayBuffer();
+                    zip.file(name.substring(0, 50), arrayBuffer, { binary: true });
                 }
 
                 const content = await zip.generateAsync({ type: 'blob' });
