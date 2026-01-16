@@ -486,16 +486,18 @@
             flex: 1;
             overflow: auto;
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             justify-content: center;
             background: var(--gray-100);
             position: relative;
+            padding: 16px;
         }
 
         .pdf-canvas {
             max-width: 100%;
-            max-height: 100%;
+            height: auto;
             display: block;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
 
         .modal-footer {
@@ -1112,7 +1114,7 @@ Return ONLY the filename. Make it as informative as possible.`;
 
             try {
                 const page = await currentPdfDoc.getPage(pageNum);
-                const scale = 1.5;
+                const scale = 1.2;
                 const viewport = page.getViewport({ scale });
                 const canvas = document.getElementById('pdfCanvas');
                 const context = canvas.getContext('2d');
