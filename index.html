@@ -180,7 +180,7 @@
                 <p>Drag and drop or click to select</p>
                 <button class="btn btn-primary" onclick="selectFiles()">Select Files</button>
                 <input type="file" id="fileInput" multiple accept=".pdf" />
-                <div class="upload-hint">PDF only - Max 500 files - 50MB each</div>
+                <div class="upload-hint">PDF only - Max 100 files - 50MB each</div>
             </div>
 
             <div class="content-section" id="contentSection">
@@ -248,7 +248,7 @@
         const MISTRAL_API_KEY = 'IwF8eZqOkChoX1BkXcnO80NVA3e54fxx';
         const MISTRAL_API_URL = 'https://api.mistral.ai/v1/chat/completions';
         const MISTRAL_MODEL = 'mistral-small-latest';
-        const MAX_FILES = 500;
+        const MAX_FILES = 100;
         const MAX_FILE_SIZE_MB = 50;
 
         const fileDatabase = new Map();
