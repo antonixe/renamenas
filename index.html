@@ -453,37 +453,38 @@
 
         async function generateFilename(content, originalName) {
             try {
-                const prompt = `TASK: Create a CONCISE, MEANINGFUL filename using CamelCase (no spaces, hyphens, or underscores).
+                const prompt = `TASK: Create a CONCISE, MEANINGFUL filename with proper spacing.
 
 ANALYSIS - Identify:
 1. Document Type: What is this? (Invoice, Receipt, Contract, Report, Letter, Certificate, Agreement, Form, etc.)
 2. Main Subject: Core topic in 1-3 words maximum
 3. Key Entity: One main name, company, or identifier
-4. Date: If present (format: DDMMMYYYY, e.g., 31Oct2020)
+4. Date: If present (format: DD Mon YYYY, e.g., 31 Oct 2020)
 
 FILENAME FORMAT:
-CamelCase with each word capitalized: TypeSubjectEntityDate
+Normal sentence case with spaces: Type Subject Entity Date
 
 RULES:
 - MAXIMUM 60 characters (keep it SHORT)
-- CamelCase only - capitalize first letter of each word
-- NO spaces, hyphens, underscores, or special characters
+- Use spaces between words
+- Title Case (capitalize first letter of each word)
+- NO hyphens, underscores, or special characters
 - NO file extension
 - Full 4-digit year (2020, not 20)
 - Be CONCISE - max 4-5 components
-- Letters and numbers only
+- Letters, numbers, and spaces only
 
 GOOD EXAMPLES:
-✓ CertificatePinAnthonyKhaoya31Oct2020
-✓ ContractEmploymentJohnDoe
-✓ ReceiptAmazonOrder12345
-✓ ReportSalesQ42024
-✓ InvoiceAcmeCorp21Mar2024
+✓ Certificate Pin Anthony Khaoya 31 Oct 2020
+✓ Contract Employment John Doe
+✓ Receipt Amazon Order 12345
+✓ Report Sales Q4 2024
+✓ Invoice Acme Corp 21 Mar 2024
 
 BAD EXAMPLES:
 ✗ certificate_pin_anthony (has underscores)
 ✗ contract-employment-john-doe (has hyphens)
-✗ receipt amazon order (has spaces)
+✗ CertificatePinAnthony (no spaces)
 
 Document content:
 ${content.substring(0, 800)}
@@ -509,7 +510,9 @@ Return ONLY the filename. Keep it short and clean.`;
                 let name = data.choices[0].message.content.trim()
                     .replace(/\.pdf$/i, '')
                     .replace(/[`"'*]/g, '')
-                    .replace(/[^a-zA-Z0-9]/g, '')
+                    .replace(/[^a-zA-Z0-9 ]/g, '')
+                    .replace(/\s+/g, ' ')
+                    .trim()
                     .substring(0, 100);
 
                 if (name.length >= 3) return name;
@@ -523,7 +526,7 @@ Return ONLY the filename. Keep it short and clean.`;
             const words = content.replace(/[^a-zA-Z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 3);
             const freq = {};
             words.forEach(w => freq[w] = (freq[w] || 0) + 1);
-            const top = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 3).map(e => e[0][0].toUpperCase() + e[0].slice(1)).join('');
+            const top = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 3).map(e => e[0][0].toUpperCase() + e[0].slice(1).toLowerCase()).join(' ');
             return (top || originalName.replace(/\.pdf$/i, '')).substring(0, 40);
         }
 
