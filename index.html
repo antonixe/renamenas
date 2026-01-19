@@ -453,45 +453,48 @@
 
         async function generateFilename(content, originalName) {
             try {
-                const prompt = `TASK: Create a filename with ISO date prefix for chronological sorting.
+                const prompt = `TASK: Create a descriptive filename for this document.
 
 ANALYSIS - Identify:
-1. Date: Find any date in the document (CRITICAL - put this FIRST in YYYY-MM-DD format)
-2. Document Type: Invoice, Receipt, Contract, Report, Letter, Certificate, Agreement, Form, etc.
-3. Key Entity: Main name, company, or identifier (1-2 words)
-4. Subject: Brief description if needed (1-2 words)
+1. Document Type: Invoice, Receipt, Contract, Report, Letter, Certificate, Agreement, Form, etc.
+2. Key Entity: Main name, company, or identifier (1-2 words)
+3. Subject: Brief description if needed (1-2 words)
+4. Date: ONLY if explicitly stated in the document (format: YYYY-MM-DD)
 
 FILENAME FORMAT:
-YYYY-MM-DD Type Entity Subject
+- If date EXISTS in document: YYYY-MM-DD Type Entity Subject
+- If NO date in document: Type Entity Subject (NO date prefix)
 
-RULES:
-- Date MUST be first in YYYY-MM-DD format (e.g., 2020-10-31)
-- If no date found, use "Undated" instead
-- Title Case for the description part
+CRITICAL RULES:
+- ONLY include a date if you find an actual date IN THE DOCUMENT TEXT
+- DO NOT invent, guess, or assume dates
+- DO NOT use today's date or any default date
+- If no date is mentioned, simply omit it entirely
+- Title Case for words
 - Use spaces between words (except in date)
 - MAXIMUM 60 characters total
 - NO underscores, NO special characters except hyphen in date
 - NO file extension
-- Be CONCISE
 
-GOOD EXAMPLES:
+GOOD EXAMPLES (with date found in document):
 ✓ 2020-10-31 Certificate Pin Anthony Khaoya
 ✓ 2024-03-21 Invoice Acme Corp
-✓ 2024-12-15 Contract Employment John Doe
-✓ 2024-01-05 Receipt Amazon Order 12345
-✓ Undated Report Sales Q4
+
+GOOD EXAMPLES (no date in document):
+✓ Contract Employment John Doe
+✓ Report Sales Q4
+✓ Receipt Amazon Order 12345
 
 BAD EXAMPLES:
-✗ Invoice Acme Corp 2024-03-21 (date not first)
-✗ 31-10-2020 Certificate Pin (wrong date format)
-✗ 2024_03_21_Invoice (has underscores)
+✗ 2024-01-19 Report Sales (date invented, not in document)
+✗ Undated Invoice Acme (don't use "Undated")
 
 Document content:
 ${content.substring(0, 800)}
 
 Original filename: ${originalName}
 
-Return ONLY the filename. Date first, then description.`;
+Return ONLY the filename. Include date ONLY if found in document.`;
 
                 const response = await fetch(MISTRAL_API_URL, {
                     method: 'POST',
@@ -527,8 +530,6 @@ Return ONLY the filename. Date first, then description.`;
             const freq = {};
             words.forEach(w => freq[w] = (freq[w] || 0) + 1);
             const top = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 3).map(e => e[0][0].toUpperCase() + e[0].slice(1).toLowerCase()).join(' ');
-            const today = new Date().toISOString().slice(0, 10);
-            return top ? `${today} ${top}` : originalName.replace(/\.pdf$/i, '').substring(0, 40);
             return (top || originalName.replace(/\.pdf$/i, '')).substring(0, 40);
         }
 
