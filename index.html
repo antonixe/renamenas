@@ -188,6 +188,7 @@
                     <div class="toolbar-title">Files <span id="fileCountDisplay">0 files</span></div>
                     <div class="toolbar-actions">
                         <button class="btn btn-success" onclick="generateAllNames()" id="generateAllBtn">Generate Names</button>
+                        <button class="btn btn-danger" onclick="cancelProcessing()" id="cancelBtn" style="display: none;">Cancel</button>
                         <button class="btn btn-primary" onclick="downloadAllAsZip()" id="downloadAllBtn">Download All</button>
                         <button class="btn btn-secondary" onclick="resetAllNames()" id="resetBtn">Reset</button>
                         <button class="btn btn-danger" onclick="clearAllFiles()" id="clearBtn">Clear</button>
@@ -211,7 +212,6 @@
                                 <th style="width: 50px">#</th>
                                 <th style="width: 200px">Original</th>
                                 <th>New Name</th>
-                                <th style="width: 80px">Size</th>
                                 <th style="width: 100px">Status</th>
                                 <th style="width: 160px">Actions</th>
                             </tr>
@@ -247,12 +247,13 @@
 
         const MISTRAL_API_KEY = 'IwF8eZqOkChoX1BkXcnO80NVA3e54fxx';
         const MISTRAL_API_URL = 'https://api.mistral.ai/v1/chat/completions';
-        const MISTRAL_MODEL = 'mistral-small-latest';
+        const MISTRAL_MODEL = 'mistral-medium-latest';
         const MAX_FILES = 200;
         const MAX_FILE_SIZE_MB = 50;
 
         const fileDatabase = new Map();
         let currentlyProcessing = false;
+        let processingCancelled = false;
 
         function escapeHtml(text) {
             const div = document.createElement('div');
@@ -341,22 +342,31 @@
             if (pendingFiles.length === 0) { showToast('No pending files', 'warning'); return; }
 
             currentlyProcessing = true;
+            processingCancelled = false;
             updateBatchButtons();
             updateProgress(0, pendingFiles.length, 'Starting...');
 
             for (let i = 0; i < pendingFiles.length; i++) {
+                if (processingCancelled) {
+                    updateProgress(0, 0);
+                    showToast(`Cancelled - processed ${i} of ${pendingFiles.length}`);
+                    break;
+                }
                 updateProgress(i, pendingFiles.length, `Processing file ${i + 1} of ${pendingFiles.length}...`);
                 await processFile(pendingFiles[i].id, i + 1, pendingFiles.length);
                 updateStats();
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
 
-            updateProgress(pendingFiles.length, pendingFiles.length, 'Complete!');
-            setTimeout(() => updateProgress(0, 0), 2000);
+            if (!processingCancelled) {
+                updateProgress(pendingFiles.length, pendingFiles.length, 'Complete!');
+                setTimeout(() => updateProgress(0, 0), 2000);
+                showToast('Processing complete!');
+            }
             
             currentlyProcessing = false;
+            processingCancelled = false;
             updateBatchButtons();
-            showToast('Processing complete!');
         }
 
         async function processFile(fileId, index, total) {
@@ -401,13 +411,13 @@
                         }
 
                         if (text.trim().length > 10) {
-                            resolve(text.substring(0, 1000));
+                            resolve(text.substring(0, 2500));
                             return;
                         }
 
                         try {
                             const ocrText = await extractWithMistralOCR(file);
-                            resolve(ocrText.substring(0, 1000));
+                            resolve(ocrText.substring(0, 2500));
                         } catch (ocrError) {
                             reject(new Error('Could not extract text from PDF'));
                         }
@@ -451,50 +461,56 @@
             return extractedText;
         }
 
-        async function generateFilename(content, originalName) {
+        async function generateFilename(content, originalName, retryCount = 0) {
             try {
-                const prompt = `TASK: Create a descriptive filename for this document.
+                const prompt = `TASK: Create a precise, descriptive filename for this document.
 
-ANALYSIS - Identify:
-1. Document Type: Invoice, Receipt, Contract, Report, Letter, Certificate, Agreement, Form, etc.
-2. Key Entity: Main name, company, or identifier (1-2 words)
-3. Subject: Brief description if needed (1-2 words)
-4. Date: ONLY if explicitly stated in the document (format: YYYY-MM-DD)
+STEP 1 - IDENTIFY DOCUMENT TYPE (be specific):
+- Financial: Invoice, Receipt, Purchase Order, Quote, Payment Voucher, Bank Statement
+- Legal: Contract, Agreement, Deed, Power of Attorney, Affidavit, Court Order
+- HR: Employment Letter, Payslip, CV, Appointment Letter, Resignation, Performance Review
+- Government: Certificate, License, Permit, Tax Return, ID Document, Passport
+- Business: Report, Proposal, Meeting Minutes, Memo, Policy, SOP
+- Personal: Letter, Application, Reference Letter
+
+STEP 2 - EXTRACT KEY DETAILS:
+- Primary Entity: Person name, company name, or organization (EXACT as written)
+- Reference Number: Invoice #, Policy #, Case #, Order # (if present)
+- Subject/Purpose: What is this specifically about?
+- Date: ONLY if explicitly written in document (format: YYYY-MM-DD)
 
 FILENAME FORMAT:
-- If date EXISTS in document: YYYY-MM-DD Type Entity Subject
-- If NO date in document: Type Entity Subject (NO date prefix)
+[Date if found] [Document Type] [Reference# if found] [Entity] [Subject]
 
-CRITICAL RULES:
-- ONLY include a date if you find an actual date IN THE DOCUMENT TEXT
-- DO NOT invent, guess, or assume dates
-- DO NOT use today's date or any default date
-- If no date is mentioned, simply omit it entirely
-- Title Case for words
-- Use spaces between words (except in date)
-- MAXIMUM 60 characters total
-- NO underscores, NO special characters except hyphen in date
-- NO file extension
+STRICT RULES:
+- Extract names EXACTLY as written (proper spelling)
+- Include reference/ID numbers when present
+- Date ONLY if explicitly stated - NEVER invent dates
+- Title Case for all words
+- Spaces between words (hyphen only in dates)
+- Maximum 70 characters
+- NO file extension, NO special characters
 
-GOOD EXAMPLES (with date found in document):
-✓ 2020-10-31 Certificate Pin Anthony Khaoya
-✓ 2024-03-21 Invoice Acme Corp
+EXCELLENT EXAMPLES:
+✓ 2024-03-21 Invoice INV-2024-0042 Acme Corp Office Supplies
+✓ Certificate of Registration ABC Company
+✓ Employment Contract John Mwangi Sales Manager
+✓ 2023-11-15 Bank Statement KCB Account 1234
+✓ Tax Compliance Certificate Kenya Revenue Authority
+✓ Passport Copy James Ochieng
 
-GOOD EXAMPLES (no date in document):
-✓ Contract Employment John Doe
-✓ Report Sales Q4
-✓ Receipt Amazon Order 12345
-
-BAD EXAMPLES:
-✗ 2024-01-19 Report Sales (date invented, not in document)
-✗ Undated Invoice Acme (don't use "Undated")
+POOR EXAMPLES (avoid these):
+✗ Document (too generic)
+✗ Scan001 (meaningless)
+✗ 2024-01-20 Letter (date invented, generic type)
+✗ file (useless)
 
 Document content:
-${content.substring(0, 800)}
+${content.substring(0, 2000)}
 
-Original filename: ${originalName}
+Original filename hint: ${originalName}
 
-Return ONLY the filename. Include date ONLY if found in document.`;
+Return ONLY the filename, nothing else.`;
 
                 const response = await fetch(MISTRAL_API_URL, {
                     method: 'POST',
@@ -502,8 +518,8 @@ Return ONLY the filename. Include date ONLY if found in document.`;
                     body: JSON.stringify({
                         model: MISTRAL_MODEL,
                         messages: [{ role: 'user', content: prompt }],
-                        temperature: 0.3,
-                        max_tokens: 60
+                        temperature: 0.2,
+                        max_tokens: 80
                     })
                 });
 
@@ -518,9 +534,18 @@ Return ONLY the filename. Include date ONLY if found in document.`;
                     .trim()
                     .substring(0, 100);
 
-                if (name.length >= 3) return name;
+                // Retry if name is too short or generic
+                const genericNames = ['document', 'file', 'scan', 'pdf', 'untitled', 'unknown'];
+                const isGeneric = name.length < 10 || genericNames.some(g => name.toLowerCase() === g);
+                
+                if (isGeneric && retryCount < 2) {
+                    await new Promise(r => setTimeout(r, 500));
+                    return generateFilename(content, originalName, retryCount + 1);
+                }
+
+                if (name.length >= 5) return name;
             } catch (error) {
-                console.error('API error:', error);
+                // Silent fail - fallback will handle
             }
             return generateFallbackName(content, originalName);
         }
@@ -549,16 +574,15 @@ Return ONLY the filename. Include date ONLY if found in document.`;
                     <div class="file-meta">${fileSizeFormatted}</div>
                 </td>
                 <td>
-                    <input type="text" class="name-input" id="input-${fileId}" value="" placeholder="Awaiting processing..." maxlength="100" />
+                    <input type="text" class="name-input" id="input-${fileId}" value="" placeholder="Awaiting processing..." maxlength="100" tabindex="0" />
                     <div class="char-count" id="count-${fileId}">0/100</div>
                 </td>
-                <td><span class="file-meta">${fileSizeFormatted}</span></td>
                 <td><span class="status pending" id="status-${fileId}"><span class="status-dot"></span>Pending</span></td>
                 <td>
                     <div class="actions">
-                        <button class="btn btn-secondary btn-sm" onclick="previewFile('${fileId}')">Preview</button>
-                        <button class="btn btn-primary btn-sm" id="download-btn-${fileId}" onclick="downloadFile('${fileId}')">Download</button>
-                        <button class="btn btn-danger btn-sm" onclick="removeFile('${fileId}')">Remove</button>
+                        <button class="btn btn-secondary btn-sm" onclick="previewFile('${fileId}')" tabindex="0">Preview</button>
+                        <button class="btn btn-primary btn-sm" id="download-btn-${fileId}" onclick="downloadFile('${fileId}')" tabindex="0">Download</button>
+                        <button class="btn btn-danger btn-sm" onclick="removeFile('${fileId}')" tabindex="0">Remove</button>
                     </div>
                 </td>
             `;
@@ -705,9 +729,16 @@ Return ONLY the filename. Include date ONLY if found in document.`;
         function updateBatchButtons() {
             const hasFiles = fileDatabase.size > 0;
             document.getElementById('generateAllBtn').disabled = !hasFiles || currentlyProcessing;
-            document.getElementById('downloadAllBtn').disabled = !hasFiles;
-            document.getElementById('resetBtn').disabled = !hasFiles;
-            document.getElementById('clearBtn').disabled = !hasFiles;
+            document.getElementById('generateAllBtn').style.display = currentlyProcessing ? 'none' : 'inline-flex';
+            document.getElementById('cancelBtn').style.display = currentlyProcessing ? 'inline-flex' : 'none';
+            document.getElementById('downloadAllBtn').disabled = !hasFiles || currentlyProcessing;
+            document.getElementById('resetBtn').disabled = !hasFiles || currentlyProcessing;
+            document.getElementById('clearBtn').disabled = !hasFiles || currentlyProcessing;
+        }
+
+        function cancelProcessing() {
+            processingCancelled = true;
+            showToast('Cancelling...');
         }
 
         function showToast(message, type = 'success') {
@@ -719,7 +750,7 @@ Return ONLY the filename. Include date ONLY if found in document.`;
             setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 4000);
         }
 
-        function generateId() { return `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`; }
+        function generateId() { return `file-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`; }
 
         let currentPreviewFile = null;
         let currentPdfDoc = null;
@@ -785,6 +816,40 @@ Return ONLY the filename. Include date ONLY if found in document.`;
 
         document.getElementById('previewModal')?.addEventListener('click', (e) => { if (e.target.id === 'previewModal') closePreview(); });
         document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.getElementById('previewModal').classList.contains('active')) closePreview(); });
+
+        // Page unload cleanup - warn if files not downloaded
+        window.addEventListener('beforeunload', (e) => {
+            if (fileDatabase.size > 0) {
+                e.preventDefault();
+                e.returnValue = '';
+                return '';
+            }
+        });
+
+        // Keyboard navigation for table
+        document.addEventListener('keydown', (e) => {
+            const activeEl = document.activeElement;
+            if (!activeEl) return;
+            
+            const row = activeEl.closest('tr');
+            if (!row) return;
+            
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                const nextRow = row.nextElementSibling;
+                if (nextRow) {
+                    const input = nextRow.querySelector('.name-input');
+                    if (input) input.focus();
+                }
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                const prevRow = row.previousElementSibling;
+                if (prevRow) {
+                    const input = prevRow.querySelector('.name-input');
+                    if (input) input.focus();
+                }
+            }
+        });
 
         updateBatchButtons();
     </script>
