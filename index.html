@@ -245,8 +245,8 @@
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-        const API_KEY = 'IwF8eZqOkChoX1BkXcnO80NVA3e54fxx';
-        const API_URL = 'https://api.mistral.ai/v1/chat/completions';
+        const API_KEY = ''; // Not needed - key is securely stored in Cloudflare Worker
+        const API_URL = 'https://pdf-renamer-proxy.officialkhaoya.workers.dev';
         const MODEL = 'mistral-large-latest';
         const VISION_MODEL = 'pixtral-large-latest';
         const MAX_FILES = 200;
