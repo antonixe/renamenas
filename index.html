@@ -463,53 +463,43 @@
 
         async function generateFilename(content, originalName, retryCount = 0) {
             try {
-                const prompt = `TASK: Create a precise, descriptive filename for this document.
+                const prompt = `TASK: Create a SHORT but MEANINGFUL filename for this document.
 
-STEP 1 - IDENTIFY DOCUMENT TYPE (be specific):
-- Financial: Invoice, Receipt, Purchase Order, Quote, Payment Voucher, Bank Statement
-- Legal: Contract, Agreement, Deed, Power of Attorney, Affidavit, Court Order
-- HR: Employment Letter, Payslip, CV, Appointment Letter, Resignation, Performance Review
-- Government: Certificate, License, Permit, Tax Return, ID Document, Passport
-- Business: Report, Proposal, Meeting Minutes, Memo, Policy, SOP
-- Personal: Letter, Application, Reference Letter
-
-STEP 2 - EXTRACT KEY DETAILS:
-- Primary Entity: Person name, company name, or organization (EXACT as written)
-- Reference Number: Invoice #, Policy #, Case #, Order # (if present)
-- Subject/Purpose: What is this specifically about?
-
-FILENAME FORMAT:
-[Document Type] [Reference# if found] [Entity] [Subject]
+PRIORITY ORDER (include only what's needed to identify the document):
+1. Document Type (Invoice, Receipt, Contract, Certificate, etc.)
+2. Key Identifier (Reference #, Person name, OR Company - pick ONE, the most important)
+3. Brief Subject (2-3 words max, only if essential)
 
 STRICT RULES:
-- DO NOT include any dates in the filename
-- Extract names EXACTLY as written (proper spelling)
-- Include reference/ID numbers when present
-- Title Case for all words
-- Spaces between words
-- Maximum 150 characters (be descriptive, include all key details)
-- NO file extension, NO special characters, NO dates
+- AIM FOR 40-80 CHARACTERS (short but meaningful)
+- NO dates ever
+- Pick the SINGLE most important identifier (don't list everything)
+- If there's a reference number, that's usually enough with doc type
+- Person name OR company, not both (unless both are essential)
+- Title Case, spaces between words
+- NO file extension, NO special characters
 
-EXCELLENT EXAMPLES:
-✓ Invoice INV-2024-0042 Acme Corp Office Supplies
-✓ Certificate of Registration ABC Company
-✓ Employment Contract John Mwangi Sales Manager
-✓ Bank Statement KCB Account 1234
-✓ Tax Compliance Certificate Kenya Revenue Authority
-✓ Passport Copy James Ochieng
+EXCELLENT EXAMPLES (notice how short yet meaningful):
+✓ Receipt DCI Police Clearance Benadette Chepke
+✓ Invoice INV-2024-0042 Acme Corp
+✓ Employment Contract John Mwangi
+✓ KRA Tax Compliance Certificate
+✓ Bank Statement KCB 1234
+✓ Passport James Ochieng
+✓ Title Deed Plot LR-4521 Nairobi
 
-POOR EXAMPLES (avoid these):
+BAD EXAMPLES:
+✗ Receipt DCI-MM93OB8 Directorate of Criminal Investigations Police Clearance Payment Certificate Benadette Chepke Wanjiru (too long, redundant)
 ✗ Document (too generic)
-✗ 2024-03-21 Invoice Acme (has date - not allowed)
+✗ Invoice 2024-03-21 Acme (has date)
 ✗ Scan001 (meaningless)
-✗ file (useless)
 
 Document content:
 ${content.substring(0, 2000)}
 
 Original filename hint: ${originalName}
 
-Return ONLY the filename, nothing else. NO DATES.`;
+Return ONLY the filename. Keep it SHORT but IDENTIFIABLE.`;
 
                 const response = await fetch(API_URL, {
                     method: 'POST',
