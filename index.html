@@ -487,7 +487,7 @@ STRICT RULES:
 - Include reference/ID numbers when present
 - Title Case for all words
 - Spaces between words
-- Maximum 60 characters
+- Maximum 150 characters (be descriptive, include all key details)
 - NO file extension, NO special characters, NO dates
 
 EXCELLENT EXAMPLES:
@@ -521,7 +521,7 @@ Return ONLY the filename, nothing else. NO DATES.`;
                         model: MODEL,
                         messages: [{ role: 'user', content: prompt }],
                         temperature: 0.2,
-                        max_tokens: 80
+                        max_tokens: 150
                     })
                 });
 
@@ -540,7 +540,7 @@ Return ONLY the filename, nothing else. NO DATES.`;
                     .replace(/[^a-zA-Z0-9 -]/g, '')
                     .replace(/\s+/g, ' ')
                     .trim()
-                    .substring(0, 100);
+                    .substring(0, 150);
 
                 console.log('Generated name from API:', name);
 
@@ -585,8 +585,8 @@ Return ONLY the filename, nothing else. NO DATES.`;
                     <div class="file-meta">${fileSizeFormatted}</div>
                 </td>
                 <td>
-                    <input type="text" class="name-input" id="input-${fileId}" value="" placeholder="Awaiting processing..." maxlength="100" tabindex="0" />
-                    <div class="char-count" id="count-${fileId}">0/100</div>
+                    <input type="text" class="name-input" id="input-${fileId}" value="" placeholder="Awaiting processing..." maxlength="150" tabindex="0" />
+                    <div class="char-count" id="count-${fileId}">0/150</div>
                 </td>
                 <td><span class="status pending" id="status-${fileId}"><span class="status-dot"></span>Pending</span></td>
                 <td>
@@ -606,7 +606,7 @@ Return ONLY the filename, nothing else. NO DATES.`;
                 let value = e.target.value.replace(/[<>:"/\\|?*]/g, '');
                 if (value !== e.target.value) e.target.value = value;
                 fileData.suggestedName = value;
-                document.getElementById(`count-${fileId}`).textContent = `${value.length}/100`;
+                document.getElementById(`count-${fileId}`).textContent = `${value.length}/150`;
             });
         }
 
@@ -615,7 +615,7 @@ Return ONLY the filename, nothing else. NO DATES.`;
             const fileData = fileDatabase.get(fileId);
             if (input) {
                 input.value = fileData.suggestedName;
-                document.getElementById(`count-${fileId}`).textContent = `${fileData.suggestedName.length}/100`;
+                document.getElementById(`count-${fileId}`).textContent = `${fileData.suggestedName.length}/150`;
             }
         }
 
@@ -679,7 +679,7 @@ Return ONLY the filename, nothing else. NO DATES.`;
             for (const [fileId, fileData] of fileDatabase) {
                 fileData.suggestedName = fileData.originalName.replace(/\.pdf$/i, '');
                 document.getElementById(`input-${fileId}`).value = fileData.suggestedName;
-                document.getElementById(`count-${fileId}`).textContent = `${fileData.suggestedName.length}/100`;
+                document.getElementById(`count-${fileId}`).textContent = `${fileData.suggestedName.length}/150`;
             }
             showToast('Names reset to original');
         }
