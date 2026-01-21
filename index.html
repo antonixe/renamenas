@@ -245,10 +245,13 @@
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-        const API_KEY = 'IwF8eZqOkChoX1BkXcnO80NVA3e54fxx';
-        const API_URL = 'https://api.mistral.ai/v1/chat/completions';
-        const MODEL = 'mistral-large-latest';
-        const VISION_MODEL = 'pixtral-large-latest';
+        // Secure proxy mode - API key is safely stored in Cloudflare Worker
+        const PROXY_URL = 'https://pdf-renamer-proxy.officialkhaoya.workers.dev';
+        
+        const API_KEY = ''; // Not needed - key is securely stored in Cloudflare
+        const API_URL = PROXY_URL;
+        const MODEL = 'anthropic/claude-3.5-sonnet';
+        const VISION_MODEL = 'anthropic/claude-3.5-sonnet';
         const MAX_FILES = 200;
         const MAX_FILE_SIZE_MB = 50;
 
@@ -353,15 +356,15 @@
                     showToast(`Cancelled - processed ${i} of ${pendingFiles.length}`);
                     break;
                 }
-                updateProgress(i, pendingFiles.length, `Processing file ${i + 1} of ${pendingFiles.length}...`);
+                updateProgress(i, pendingFiles.length, `Processing ${i + 1}/${pendingFiles.length}...`);
                 await processFile(pendingFiles[i].id, i + 1, pendingFiles.length);
                 updateStats();
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                await new Promise(resolve => setTimeout(resolve, 500));
             }
 
             if (!processingCancelled) {
                 updateProgress(pendingFiles.length, pendingFiles.length, 'Complete!');
-                setTimeout(() => updateProgress(0, 0), 2000);
+                setTimeout(() => updateProgress(0, 0), 1500);
                 showToast('Processing complete!');
             }
             
@@ -420,7 +423,7 @@
                         }
 
                         try {
-                            const ocrText = await extractWithMistralOCR(file);
+                            const ocrText = await extractWithVisionOCR(file);
                             resolve(ocrText.substring(0, 2500));
                         } catch (ocrError) {
                             reject(new Error('Could not extract text from PDF'));
@@ -434,130 +437,145 @@
             });
         }
 
-        async function extractWithMistralOCR(file) {
+        async function extractWithVisionOCR(file) {
+            // Convert first page of PDF to image for vision model
             const buffer = await file.arrayBuffer();
-            const bytes = new Uint8Array(buffer);
-            let binary = '';
-            for (let i = 0; i < bytes.byteLength; i++) { binary += String.fromCharCode(bytes[i]); }
-            const base64 = btoa(binary);
+            
+            const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+            const page = await pdf.getPage(1);
+            const scale = 1.5;
+            const viewport = page.getViewport({ scale });
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            const ctx = canvas.getContext('2d');
+            
+            await page.render({ canvasContext: ctx, viewport }).promise;
+            const base64Image = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+            
+            const headers = { 'Content-Type': 'application/json' };
+            if (!PROXY_URL) {
+                headers['Authorization'] = `Bearer ${API_KEY}`;
+                headers['HTTP-Referer'] = window.location.href;
+                headers['X-Title'] = 'PDF Renamer';
+            }
 
-            const response = await fetch('https://api.mistral.ai/v1/ocr', {
+            const response = await fetch(API_URL, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${API_KEY}` },
+                headers,
                 body: JSON.stringify({
-                    model: 'mistral-ocr-latest',
-                    document: { type: 'document_url', document_url: `data:application/pdf;base64,${base64}` }
+                    model: VISION_MODEL,
+                    messages: [{
+                        role: 'user',
+                        content: [
+                            { type: 'text', text: 'Extract all readable text from this document image. Return only the text content.' },
+                            { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
+                        ]
+                    }],
+                    max_tokens: 1500
                 })
             });
 
-            if (!response.ok) throw new Error(`OCR API error: ${response.status}`);
+            if (!response.ok) throw new Error(`Vision API error: ${response.status}`);
 
             const data = await response.json();
-            let extractedText = '';
-            if (data.pages && Array.isArray(data.pages)) {
-                extractedText = data.pages.map(page => page.markdown || page.content || page.text || '').join(' ');
-            }
-            if (!extractedText.trim()) throw new Error('OCR found no readable text');
+            const extractedText = data.choices[0].message.content.trim();
+            if (!extractedText) throw new Error('Vision model found no readable text');
             return extractedText;
         }
 
         async function generateFilename(content, originalName, retryCount = 0) {
             try {
-                const prompt = `TASK: Create a SHORT but MEANINGFUL filename for this document.
+                const prompt = `You are a document filing assistant. Generate a concise, descriptive filename.
 
-PRIORITY ORDER (include only what's needed to identify the document):
-1. Document Type (Invoice, Receipt, Contract, Certificate, etc.)
-2. Key Identifier (Reference #, Company, or Subject - NOT person names)
-3. Brief Subject (2-3 words max, only if essential)
+FORMAT: [Type] [Identifier] [Context]
+- Type: Document category (Invoice, Receipt, Certificate, Contract, Report, Letter, Form, etc.)
+- Identifier: Reference number, company name, or department (pick most unique)
+- Context: 1-3 words describing purpose (optional, only if needed for clarity)
 
-STRICT RULES:
-- AIM FOR 40-80 CHARACTERS (short but meaningful)
-- NO dates ever
-- NO PERSON NAMES - use document type, reference numbers, or company instead
-- If there's a reference number, that's usually enough with doc type
-- Title Case, spaces between words
-- NO file extension, NO special characters
+RULES:
+1. 30-70 characters ideal
+2. NO dates, NO person names, NO file extensions
+3. Title Case with spaces
+4. Prioritize: Reference numbers > Company/Org > Purpose
+5. Be specific: "KRA Tax Clearance" not "Tax Document"
 
-EXCELLENT EXAMPLES (notice: no person names):
-✓ Receipt DCI Police Clearance
-✓ Invoice INV-2024-0042 Acme Corp
-✓ Employment Contract Sales Manager
-✓ KRA Tax Compliance Certificate
-✓ Bank Statement KCB 1234
-✓ Passport Application
-✓ Title Deed Plot LR-4521 Nairobi
-✓ Medical Report Annual Checkup
+EXAMPLES:
+Invoice INV-8842 Safaricom
+Receipt NTSA Driving License Renewal
+Certificate KRA Tax Compliance
+Contract Employment Marketing Dept
+Bank Statement Equity Jan Account
+Title Deed LR-4521 Westlands
+Medical Report Lab Results
+NHIF Card Replacement
+Passport Application Form
+Utility Bill KPLC Prepaid
 
-BAD EXAMPLES:
-✗ Receipt John Smith (contains person name - avoid this)
-✗ Employment Contract Jane Doe (contains person name)
-✗ Document (too generic)
-✗ Invoice 2024-03-21 Acme (has date)
-✗ Scan001 (meaningless)
+TEXT:
+${content.substring(0, 1500)}
 
-Document content:
-${content.substring(0, 2000)}
+FILENAME:`;
 
-Original filename hint: ${originalName}
-
-Return ONLY the filename. NO PERSON NAMES. Keep it SHORT but IDENTIFIABLE.`;
+                // Build headers - only include Authorization if not using proxy
+                const headers = { 'Content-Type': 'application/json' };
+                if (!PROXY_URL) {
+                    headers['Authorization'] = `Bearer ${API_KEY}`;
+                    headers['HTTP-Referer'] = window.location.href;
+                    headers['X-Title'] = 'PDF Renamer';
+                }
 
                 const response = await fetch(API_URL, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${API_KEY}`
-                    },
+                    headers,
                     body: JSON.stringify({
                         model: MODEL,
                         messages: [{ role: 'user', content: prompt }],
-                        temperature: 0.2,
-                        max_tokens: 150
+                        temperature: 0.1,
+                        max_tokens: 60
                     })
                 });
 
-                console.log('API Response status:', response.status);
                 if (!response.ok) {
-                    const errorText = await response.text();
-                    console.error('API Error:', errorText);
-                    throw new Error(`API error: ${response.status} - ${errorText}`);
+                    throw new Error(`API error: ${response.status}`);
                 }
 
                 const data = await response.json();
-                console.log('API Response data:', data);
                 let name = data.choices[0].message.content.trim()
+                    .replace(/^["']|["']$/g, '')
                     .replace(/\.pdf$/i, '')
-                    .replace(/[`"'*]/g, '')
-                    .replace(/[^a-zA-Z0-9 -]/g, '')
+                    .replace(/^(filename|name|title):\s*/i, '')
+                    .replace(/[`"'*<>:"/\\|?]/g, '')
+                    .replace(/[^a-zA-Z0-9 -]/g, ' ')
                     .replace(/\s+/g, ' ')
                     .trim()
-                    .substring(0, 150);
-
-                console.log('Generated name from API:', name);
+                    .substring(0, 100);
 
                 // Retry if name is too short or generic
-                const genericNames = ['document', 'file', 'scan', 'pdf', 'untitled', 'unknown'];
-                const isGeneric = name.length < 10 || genericNames.some(g => name.toLowerCase() === g);
+                const genericNames = ['document', 'file', 'scan', 'pdf', 'untitled', 'unknown', 'filename', 'name'];
+                const isGeneric = name.length < 8 || genericNames.some(g => name.toLowerCase() === g || name.toLowerCase().startsWith(g + ' '));
                 
-                if (isGeneric && retryCount < 2) {
-                    await new Promise(r => setTimeout(r, 500));
+                if (isGeneric && retryCount < 1) {
+                    await new Promise(r => setTimeout(r, 300));
                     return generateFilename(content, originalName, retryCount + 1);
                 }
 
                 if (name.length >= 5) return name;
             } catch (error) {
-                console.error('generateFilename error:', error);
+                // Silent fail - fallback will handle
             }
-            console.log('Using fallback name generator');
             return generateFallbackName(content, originalName);
         }
 
         function generateFallbackName(content, originalName) {
-            const words = content.replace(/[^a-zA-Z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 3);
+            // Extract meaningful words, excluding common stop words
+            const stopWords = ['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'her', 'was', 'one', 'our', 'out', 'has', 'have', 'been', 'this', 'that', 'with', 'from', 'they', 'will', 'would', 'there', 'their', 'what', 'about', 'which', 'when', 'make', 'like', 'time', 'just', 'know', 'take', 'people', 'into', 'year', 'your', 'good', 'some', 'could', 'them', 'other', 'than', 'then', 'look', 'only', 'come', 'over', 'such', 'also', 'back', 'after', 'most', 'made', 'where', 'being', 'page', 'date', 'dear', 'sincerely', 'regards'];
+            const words = content.toLowerCase().replace(/[^a-zA-Z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 3 && !stopWords.includes(w));
             const freq = {};
             words.forEach(w => freq[w] = (freq[w] || 0) + 1);
-            const top = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 3).map(e => e[0][0].toUpperCase() + e[0].slice(1).toLowerCase()).join(' ');
-            return (top || originalName.replace(/\.pdf$/i, '')).substring(0, 40);
+            const top = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 4).map(e => e[0][0].toUpperCase() + e[0].slice(1)).join(' ');
+            return (top || originalName.replace(/\.pdf$/i, '')).substring(0, 60);
         }
 
         function addFileToTable(fileId) {
