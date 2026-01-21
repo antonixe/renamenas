@@ -441,12 +441,13 @@
             for (let i = 0; i < bytes.byteLength; i++) { binary += String.fromCharCode(bytes[i]); }
             const base64 = btoa(binary);
 
-            const response = await fetch('https://api.mistral.ai/v1/ocr', {
+            const response = await fetch(API_URL, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${API_KEY}` },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    model: 'mistral-ocr-latest',
-                    document: { type: 'document_url', document_url: `data:application/pdf;base64,${base64}` }
+                    model: VISION_MODEL,
+                    messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: `data:application/pdf;base64,${base64}` } }, { type: 'text', text: 'Extract all text from this PDF document.' }] }],
+                    max_tokens: 2000
                 })
             });
 
@@ -497,8 +498,7 @@ FILENAME:`;
                 const response = await fetch(API_URL, {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${API_KEY}`
+                        'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
                         model: MODEL,
