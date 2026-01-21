@@ -247,8 +247,8 @@
 
         const API_KEY = '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';
         const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
-        const MODEL = 'anthropic/claude-opus-4';
-        const VISION_MODEL = 'anthropic/claude-opus-4';
+        const MODEL = 'anthropic/claude-3.5-sonnet';
+        const VISION_MODEL = 'anthropic/claude-3.5-sonnet';
         const MAX_FILES = 200;
         const MAX_FILE_SIZE_MB = 50;
 
@@ -550,9 +550,15 @@ Return ONLY the filename, nothing else. NO DATES.`;
                     })
                 });
 
-                if (!response.ok) throw new Error(`API error: ${response.status}`);
+                console.log('API Response status:', response.status);
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('API Error:', errorText);
+                    throw new Error(`API error: ${response.status} - ${errorText}`);
+                }
 
                 const data = await response.json();
+                console.log('API Response data:', data);
                 let name = data.choices[0].message.content.trim()
                     .replace(/\.pdf$/i, '')
                     .replace(/[`"'*]/g, '')
@@ -560,6 +566,8 @@ Return ONLY the filename, nothing else. NO DATES.`;
                     .replace(/\s+/g, ' ')
                     .trim()
                     .substring(0, 100);
+
+                console.log('Generated name from API:', name);
 
                 // Retry if name is too short or generic
                 const genericNames = ['document', 'file', 'scan', 'pdf', 'untitled', 'unknown'];
@@ -572,8 +580,9 @@ Return ONLY the filename, nothing else. NO DATES.`;
 
                 if (name.length >= 5) return name;
             } catch (error) {
-                // Silent fail - fallback will handle
+                console.error('generateFilename error:', error);
             }
+            console.log('Using fallback name generator');
             return generateFallbackName(content, originalName);
         }
 
