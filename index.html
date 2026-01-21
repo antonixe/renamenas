@@ -467,29 +467,30 @@
 
 PRIORITY ORDER (include only what's needed to identify the document):
 1. Document Type (Invoice, Receipt, Contract, Certificate, etc.)
-2. Key Identifier (Reference #, Person name, OR Company - pick ONE, the most important)
+2. Key Identifier (Reference #, Company, or Subject - NOT person names)
 3. Brief Subject (2-3 words max, only if essential)
 
 STRICT RULES:
 - AIM FOR 40-80 CHARACTERS (short but meaningful)
 - NO dates ever
-- Pick the SINGLE most important identifier (don't list everything)
+- NO PERSON NAMES - use document type, reference numbers, or company instead
 - If there's a reference number, that's usually enough with doc type
-- Person name OR company, not both (unless both are essential)
 - Title Case, spaces between words
 - NO file extension, NO special characters
 
-EXCELLENT EXAMPLES (notice how short yet meaningful):
-✓ Receipt DCI Police Clearance Benadette Chepke
+EXCELLENT EXAMPLES (notice: no person names):
+✓ Receipt DCI Police Clearance
 ✓ Invoice INV-2024-0042 Acme Corp
-✓ Employment Contract John Mwangi
+✓ Employment Contract Sales Manager
 ✓ KRA Tax Compliance Certificate
 ✓ Bank Statement KCB 1234
-✓ Passport James Ochieng
+✓ Passport Application
 ✓ Title Deed Plot LR-4521 Nairobi
+✓ Medical Report Annual Checkup
 
 BAD EXAMPLES:
-✗ Receipt DCI-MM93OB8 Directorate of Criminal Investigations Police Clearance Payment Certificate Benadette Chepke Wanjiru (too long, redundant)
+✗ Receipt John Smith (contains person name - avoid this)
+✗ Employment Contract Jane Doe (contains person name)
 ✗ Document (too generic)
 ✗ Invoice 2024-03-21 Acme (has date)
 ✗ Scan001 (meaningless)
@@ -499,7 +500,7 @@ ${content.substring(0, 2000)}
 
 Original filename hint: ${originalName}
 
-Return ONLY the filename. Keep it SHORT but IDENTIFIABLE.`;
+Return ONLY the filename. NO PERSON NAMES. Keep it SHORT but IDENTIFIABLE.`;
 
                 const response = await fetch(API_URL, {
                     method: 'POST',
