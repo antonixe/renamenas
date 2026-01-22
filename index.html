@@ -170,7 +170,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>PDF Renamer</h1>
+            <h1>PDF Renamer <span id="modelBadge" style="font-size:12px;color:var(--gray-500);font-weight:400;margin-left:10px;">Model: ${MODEL}</span></h1>
             <p>Rename documents using AI-powered content analysis</p>
         </div>
 
@@ -247,14 +247,20 @@
 
         const API_KEY = '61nLSJ696zXwjbkurWUE64oXZNItZ6LT';
         const API_URL = 'https://api.mistral.ai/v1/chat/completions';
-        const MODEL = 'mistral-large-latest';
-        const VISION_MODEL = 'mistral-large-latest';
+        const MODEL = 'mistral-medium-latest';
+        const VISION_MODEL = 'mistral-medium-latest';
         const MAX_FILES = 200;
         const MAX_FILE_SIZE_MB = 50;
 
         const fileDatabase = new Map();
         let currentlyProcessing = false;
         let processingCancelled = false;
+
+        // Show current model in header
+        document.addEventListener('DOMContentLoaded', () => {
+            const badge = document.getElementById('modelBadge');
+            if (badge) badge.textContent = 'Model: ' + MODEL;
+        });
 
         function escapeHtml(text) {
             const div = document.createElement('div');
@@ -495,6 +501,8 @@ ${content.substring(0, 1500)}
 
 FILENAME:`;
 
+                console.log('Using model:', MODEL);
+                console.log('Prompt (first 300 chars):', prompt.substring(0,300));
                 const response = await fetch(API_URL, {
                     method: 'POST',
                     headers: {
@@ -509,9 +517,14 @@ FILENAME:`;
                     })
                 });
 
+                console.log('API response status:', response.status);
                 const data = await response.json();
+                console.log('API response body:', data);
 
                 if (!response.ok) {
+                    const text = JSON.stringify(data);
+                    console.error('API error text:', text);
+                    showToast('API error: ' + response.status + '. See console for details.', 'error');
                     throw new Error(`API error: ${response.status}`);
                 }
 
@@ -544,6 +557,7 @@ FILENAME:`;
                     return generateFilename(content, originalName, retryCount + 1);
                 }
 
+                console.log('Parsed name:', name);
                 if (name.length >= 5) return name;
             } catch (error) {
                 // Silent fail - fallback will handle
