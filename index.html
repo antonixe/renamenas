@@ -396,8 +396,9 @@
                 updateFileStatus(fileId, 'success');
                 updateFileInTable(fileId);
             } catch (error) {
-                const fallbackName = fileData.originalName.replace(/\.pdf$/i, '').substring(0, 40);
-                fileData.suggestedName = fallbackName;
+                // Do NOT fallback silently. Clear suggested name and show error status.
+                fileData.suggestedName = '';
+                updateFileInTable(fileId);
                 updateFileStatus(fileId, 'error');
                 showToast(`${index}/${total}: ${error.message}`, 'error');
             }
@@ -560,9 +561,10 @@ FILENAME:`;
                 console.log('Parsed name:', name);
                 if (name.length >= 5) return name;
             } catch (error) {
-                // Silent fail - fallback will handle
+                console.error('API Error:', error);
+                showToast('Filename generation failed: ' + (error.message || 'Unknown error'), 'error');
+                throw error;
             }
-            return generateFallbackName(content, originalName);
         }
 
         function generateFallbackName(content, originalName) {
