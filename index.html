@@ -247,8 +247,8 @@
 
         const API_KEY = ''; // Not needed - key is securely stored in Cloudflare Worker
         const API_URL = 'https://pdf-renamer-proxy.officialkhaoya.workers.dev';
-        const MODEL = 'openai/gpt-oss-120b';
-        const VISION_MODEL = 'openai/gpt-oss-120b';
+        const MODEL = 'llama-3.3-70b-versatile';
+        const VISION_MODEL = 'llama-3.2-90b-vision-preview';
         const MAX_FILES = 200;
         const MAX_FILE_SIZE_MB = 50;
 
@@ -508,11 +508,14 @@ FILENAME:`;
                     })
                 });
 
+                console.log('Response status:', response.status);
+                const data = await response.json();
+                console.log('API response:', data);
+
                 if (!response.ok) {
                     throw new Error(`API error: ${response.status}`);
                 }
 
-                const data = await response.json();
                 let name = data.choices[0].message.content.trim()
                     .replace(/^["']|["']$/g, '')
                     .replace(/\.pdf$/i, '')
@@ -522,6 +525,7 @@ FILENAME:`;
                     .replace(/\s+/g, ' ')
                     .trim()
                     .substring(0, 100);
+                console.log('Generated name:', name);
 
                 // Retry if name is too short or generic
                 const genericNames = ['document', 'file', 'scan', 'pdf', 'untitled', 'unknown', 'filename', 'name'];
