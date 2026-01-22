@@ -534,7 +534,7 @@ FILENAME:`;
 
                 if (name.length >= 5) return name;
             } catch (error) {
-                // Silent fail - fallback will handle
+                console.error('API Error:', error);
             }
             return generateFallbackName(content, originalName);
         }
