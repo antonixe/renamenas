@@ -470,6 +470,35 @@
         }
 
         async function generateFilename(content, originalName, retryCount = 0) {
+            // Basic readability check: require enough alphabetic content and word tokens
+            function isReadableText(txt) {
+                if (!txt) return false;
+                const letters = (txt.match(/[A-Za-z]/g) || []).length;
+                const words = txt.replace(/[^a-zA-Z\s]/g, ' ').split(/\s+/).filter(w => w.length > 3);
+                // require at least 8 alphabetic chars and 6 words >3 chars
+                return letters >= 30 && words.length >= 6;
+            }
+
+            // Heuristic to detect gibberish names (e.g., random uppercase tokens)
+            function isGibberishName(n) {
+                if (!n) return true;
+                // Reject names containing a token with no vowels and length >= 5 (e.g., EDGYPRP)
+                const tokens = n.split(/\s+/);
+                for (const t of tokens) {
+                    if (t.length >= 5 && !/[aeiouAEIOU]/.test(t)) return true;
+                    if (/[^A-Za-z \-]/.test(t)) return true; // any remaining weird chars
+                }
+                // reject if overall letter ratio is very low
+                const letters = (n.match(/[A-Za-z]/g) || []).length;
+                const nonLetters = n.length - letters;
+                if (letters < 3 || letters / Math.max(1, nonLetters) < 0.3) return true;
+                return false;
+            }
+
+            if (!isReadableText(content)) {
+                throw new Error('Document is not readable enough to generate a reliable filename');
+            }
+
             try {
                 const prompt = `You are a document filing assistant. Generate a concise, descriptive filename.
 
@@ -481,17 +510,18 @@ FORMAT: [Type] [Identifier] [Context]
 RULES:
 1. 30-70 characters ideal
 2. NO dates, NO person names, NO file extensions
-3. Title Case with spaces
-4. Prioritize: Reference numbers > Company/Org > Purpose
-5. Be specific: "KRA Tax Clearance" not "Tax Document"
+3. NO NUMBERS (remove any numeric sequences or identifiers)
+4. Title Case with spaces
+5. Prioritize: Company/Org > Purpose (do not use numeric reference codes)
+6. Be specific: "KRA Tax Clearance" not "Tax Document"
 
 EXAMPLES:
-Invoice INV-8842 Safaricom
-Receipt NTSA Driving License Renewal
+Invoice Safaricom
+Receipt Driving License Renewal
 Certificate KRA Tax Compliance
 Contract Employment Marketing Dept
-Bank Statement Equity Jan Account
-Title Deed LR-4521 Westlands
+Bank Statement Equity Account
+Title Deed Westlands
 Medical Report Lab Results
 NHIF Card Replacement
 Passport Application Form
@@ -544,7 +574,10 @@ FILENAME:`;
                     .replace(/\.pdf$/i, '')
                     .replace(/^(filename|name|title):\s*/i, '')
                     .replace(/[`"'*<>:"/\\|?]/g, '')
-                    .replace(/[^a-zA-Z0-9 -]/g, ' ')
+                    // Remove any digit sequences
+                    .replace(/\d+/g, '')
+                    // Keep only letters, spaces and hyphens
+                    .replace(/[^a-zA-Z -]/g, ' ')
                     .replace(/\s+/g, ' ')
                     .trim()
                     .substring(0, 100);
@@ -559,6 +592,13 @@ FILENAME:`;
                 }
 
                 console.log('Parsed name:', name);
+
+                // If name looks like gibberish, fail instead of returning a random-looking value
+                if (isGibberishName(name)) {
+                    console.error('Generated name detected as gibberish:', name);
+                    throw new Error('Generated name appears to be gibberish / unreliable');
+                }
+
                 if (name.length >= 5) return name;
             } catch (error) {
                 console.error('API Error:', error);
@@ -570,7 +610,7 @@ FILENAME:`;
         function generateFallbackName(content, originalName) {
             // Extract meaningful words, excluding common stop words
             const stopWords = ['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'her', 'was', 'one', 'our', 'out', 'has', 'have', 'been', 'this', 'that', 'with', 'from', 'they', 'will', 'would', 'there', 'their', 'what', 'about', 'which', 'when', 'make', 'like', 'time', 'just', 'know', 'take', 'people', 'into', 'year', 'your', 'good', 'some', 'could', 'them', 'other', 'than', 'then', 'look', 'only', 'come', 'over', 'such', 'also', 'back', 'after', 'most', 'made', 'where', 'being', 'page', 'date', 'dear', 'sincerely', 'regards'];
-            const words = content.toLowerCase().replace(/[^a-zA-Z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 3 && !stopWords.includes(w));
+            const words = content.toLowerCase().replace(/[^a-zA-Z\s]/g, ' ').split(/\s+/).filter(w => w.length > 3 && !stopWords.includes(w) && !/\d/.test(w));
             const freq = {};
             words.forEach(w => freq[w] = (freq[w] || 0) + 1);
             const top = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 4).map(e => e[0][0].toUpperCase() + e[0].slice(1)).join(' ');
