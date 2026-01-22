@@ -508,15 +508,23 @@ FILENAME:`;
                     })
                 });
 
-                console.log('Response status:', response.status);
                 const data = await response.json();
-                console.log('API response:', data);
 
                 if (!response.ok) {
                     throw new Error(`API error: ${response.status}`);
                 }
 
-                let name = data.choices[0].message.content.trim()
+                // Handle both regular models (content) and reasoning models (reasoning field)
+                const msg = data.choices[0].message;
+                let rawContent = msg.content || '';
+                
+                // For reasoning models like GPT-OSS, extract filename from reasoning
+                if (!rawContent && msg.reasoning) {
+                    const match = msg.reasoning.match(/["']([^"']+\.[a-z]{2,4})["']|filename[:\s]+["']?([^"'\n,]+)/i);
+                    rawContent = match ? (match[1] || match[2]) : '';
+                }
+
+                let name = rawContent.trim()
                     .replace(/^["']|["']$/g, '')
                     .replace(/\.pdf$/i, '')
                     .replace(/^(filename|name|title):\s*/i, '')
@@ -525,7 +533,6 @@ FILENAME:`;
                     .replace(/\s+/g, ' ')
                     .trim()
                     .substring(0, 100);
-                console.log('Generated name:', name);
 
                 // Retry if name is too short or generic
                 const genericNames = ['document', 'file', 'scan', 'pdf', 'untitled', 'unknown', 'filename', 'name'];
@@ -538,7 +545,7 @@ FILENAME:`;
 
                 if (name.length >= 5) return name;
             } catch (error) {
-                console.error('API Error:', error);
+                // Silent fail - fallback will handle
             }
             return generateFallbackName(content, originalName);
         }
