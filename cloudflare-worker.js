@@ -1,5 +1,5 @@
 // Cloudflare Worker - PDF Renamer API Proxy
-// Deploy this to Cloudflare Workers and set MISTRAL_API_KEY as an environment variable
+// Deploy this to Cloudflare Workers and set GROQ_API_KEY as an environment variable
 
 export default {
   async fetch(request, env, ctx) {
@@ -23,19 +23,19 @@ export default {
     try {
       const body = await request.json();
       
-      // Forward request to Mistral AI
-      const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+      // Forward request to Groq API
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${env.MISTRAL_API_KEY}`
+          'Authorization': `Bearer ${env.GROQ_API_KEY}`
         },
         body: JSON.stringify(body)
       });
 
       const data = await response.json();
 
-      // Forward the actual status code from Mistral
+      // Forward the actual status code from Groq
       return new Response(JSON.stringify(data), {
         status: response.status,
         headers: {
